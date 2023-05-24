@@ -12,11 +12,12 @@
 #endif
 
 //#define HIDE_IGNORE_MSG
-#define DIMMER_EXTRA_DEBUG
+//#define DIMMER_EXTRA_DEBUG
 #define RADIOWATCHDOG
 #define RADIO_EXTRA_DEBUG
 //#define NDEBUG
 #undef NDEBUG
+#define USE_CCA
 
 // as we have no defined HW in STM32duino yet, we are working on base of the default STM32L152CB board
 // which has a different pin map. deviances are handled for the moment in a local header file. 
@@ -138,8 +139,8 @@ void loop() {
 
 #ifdef RADIO_EXTRA_DEBUG
 /* Use serial input function to debug CC1101 status at runtime
-*  Input format: <type><info> followed by a return
-*  There are two types available, S = CC1101_STATUS, C = CC1101_CONFIG
+*  Input format: $<info> 's' or 'r' followed by a return
+*  There are two types available, s = CC1101_STATUS, c = CC1101_CONFIG
 * 
 *  CC1101_STATUS:
 *  CC1101_PARTNUM          0x30               (0x00)  Chip ID
@@ -159,27 +160,123 @@ void loop() {
 *
 */
 
+#include "inputparser.h"
+InputParser parser(50, (InputParser::Commands*)cmdTab);
+
+const InputParser::Commands cmdTab[] PROGMEM = {
+//  { 'h', 0, showHelp },
+  { 'r', 1, readCCstatus },
+  { 's', 7, sendCmdStr },
+  { 'p', 0, listPeers },
+//  { 'f', 2, writeEEprom },
+//  { 'c', 0, clearEEprom },
+//  { 't', 0, testConfig },
+
+//  { 'b', 1, buttonSend },
+//  { 'a', 0, stayAwake },
+
+//  { 'r', 0, resetDevice },
+  { 0 }
+};
+
 RadioSPI spi;
 
-void serialEventRun(void) {
-  if (!DSERIAL.available()) return;
-  String test = DSERIAL.readString();
-  uint8_t info = ((test.charAt(1) - 0x30) * 0x10) + (test.charAt(2) - 0x30);
+void readCCstatus() {
+  uint8_t ret, info;
+  parser >> info;
+  ret = spi.readReg(info, CC1101_STATUS);
+  DPRINT(F("\nread status: 0x")); DHEX(info); DPRINT(F(": 0x")); DHEX(ret); DPRINT('\n');
 
-  if (test.charAt(0) == 's') {
-    if ((info < 0x30) || (info > 0x3D)) return;
-    uint8_t x = spi.readReg(info, CC1101_STATUS);
-    DPRINT('\n'); DPRINT(F("read status: 0x")); DHEX(info); DPRINT(F(": 0x")); DHEX(x); DPRINT('\n');
-
+  switch (info) {
+  case 0x33:  // LQI
+    DPRINT(F("LQI: ")); DPRINT(ret & 0x7F);
+    if (ret & 0x80) DPRINT(F(", CRC_OK"));
+    DPRINT('\n');
+    break;
+  case 0x35:  // Marcstate
+    DPRINT(F("MARCSTATE_"));
+    if      (ret == 0x00) DPRINT(F("SLEEP"));
+    else if (ret == 0x01) DPRINT(F("IDLE"));
+    else if (ret == 0x02) DPRINT(F("XOFF"));
+    else if (ret == 0x03) DPRINT(F("VCOON_MC"));
+    else if (ret == 0x04) DPRINT(F("REGON_MC"));
+    else if (ret == 0x05) DPRINT(F("MANCAL"));
+    else if (ret == 0x06) DPRINT(F("VCOON"));
+    else if (ret == 0x07) DPRINT(F("REGON"));
+    else if (ret == 0x08) DPRINT(F("STARTCAL"));
+    else if (ret == 0x09) DPRINT(F("BWBOOST"));
+    else if (ret == 0x0a) DPRINT(F("FS_LOCK"));
+    else if (ret == 0x0b) DPRINT(F("IFADCON"));
+    else if (ret == 0x0c) DPRINT(F("ENDCAL"));
+    else if (ret == 0x0d) DPRINT(F("RX"));
+    else if (ret == 0x0e) DPRINT(F("RX_END"));
+    else if (ret == 0x0f) DPRINT(F("RX_RST"));
+    else if (ret == 0x10) DPRINT(F("TXRX_SWITCH"));
+    else if (ret == 0x11) DPRINT(F("RXFIFO_OVERFLOW"));
+    else if (ret == 0x12) DPRINT(F("FSTXON"));
+    else if (ret == 0x13) DPRINT(F("TX"));
+    else if (ret == 0x14) DPRINT(F("TX_END"));
+    else if (ret == 0x15) DPRINT(F("RXTX_SWITCH"));
+    else if (ret == 0x16) DPRINT(F("TXFIFO_UNDERFLOW"));
+    DPRINT('\n');
+    break;
+  case 0x38:  // PKTSTATUS
+    DPRINT(F("PKTSTATUS"));
+    if (ret & 0x01) DPRINT(F(", GDO0"));
+    if (ret & 0x04) DPRINT(F(", GDO2"));
+    if (ret & 0x08) DPRINT(F(", SFD"));
+    if (ret & 0x10) DPRINT(F(", CCA"));
+    if (ret & 0x20) DPRINT(F(", PQT_REACHED"));
+    if (ret & 0x40) DPRINT(F(", CS"));
+    if (ret & 0x80) DPRINT(F(", CRC_OK"));
+    DPRINT('\n');
+    break;
+  case 0x3a:  // TXBYTES
+    DPRINT(F("TXBYTES: ")); DPRINT(ret & 0x7F);
+    if (ret & 0x80) DPRINT(F(", TXFIFO_UNDERFLOW"));
+    DPRINT('\n');
+    break;
+  case 0x3b:  // RXBYTES
+    DPRINT(F("RXBYTES: ")); DPRINT(ret & 0x7F);
+    if (ret & 0x80) DPRINT(F(", RXFIFO_OVERFLOW"));
+    DPRINT('\n');
+    break;
+  default:
+    break;
   }
-  else if (test.charAt(0) == 'c') {
-    DPRINTLN(F("read config"));
-
-  }
-  else if (test.charAt(0) == 's') {
-    DPRINTLN(F("send string"));
-    //test = test
-  }
-
+  DPRINT('\n');
 }
+
+void sendCmdStr() {																
+  Message msg;
+
+  msg.init(0x0b, parser.buffer[1], parser.buffer[3], parser.buffer[2], parser.buffer[10], parser.buffer[11]);
+  msg.from(&parser.buffer[4]);
+  msg.to(&parser.buffer[7]);
+
+  uint8_t dlen = parser.buffer[0] - 0x0b;
+  if (dlen) msg.append(&parser.buffer[12], dlen);
+  //msg.dump();
+  sdev.send(msg);
+}
+
+void listPeers() {
+  uint8_t cnlcnt = sdev.channels();
+  DPRINTLN(F("\nlist peers"));
+  for (uint8_t i = 1; i <= cnlcnt; i++) {
+    uint8_t pcnt = sdev.channel(i).peers();
+    DPRINT(F("CNL: ")); DPRINT(i); DPRINT(F(", PEERS: ")); DPRINTLN(pcnt);
+    
+    for (uint8_t j = 0; j < pcnt; j++) {
+      DHEX(j); DPRINT(' '); DHEXLN(sdev.channel(i).peerat(j));
+    }
+  }
+  DPRINT('\n');
+}
+
+
+void serialEventRun(void) {
+  parser.poll();
+}
+
 #endif
