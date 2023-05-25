@@ -14,7 +14,7 @@
 //#define HIDE_IGNORE_MSG
 //#define DIMMER_EXTRA_DEBUG
 #define RADIOWATCHDOG
-#define RADIO_EXTRA_DEBUG
+#define EXTRA_DEBUG
 //#define NDEBUG
 #undef NDEBUG
 #define USE_CCA
@@ -128,6 +128,7 @@ void setup () {
   DDEVINFO(sdev);
 }
 
+
 void loop() {
   bool worked = hal.runready();
   bool poll = sdev.pollRadio();
@@ -137,7 +138,7 @@ void loop() {
 }
 
 
-#ifdef RADIO_EXTRA_DEBUG
+#ifdef EXTRA_DEBUG
 /* Use serial input function to debug CC1101 status at runtime
 *  Input format: $<info> 's' or 'r' followed by a return
 *  There are two types available, s = CC1101_STATUS, c = CC1101_CONFIG
@@ -165,10 +166,11 @@ InputParser parser(50, (InputParser::Commands*)cmdTab);
 
 const InputParser::Commands cmdTab[] PROGMEM = {
 //  { 'h', 0, showHelp },
+  { 'a', 0, readCCstatusall },
   { 'r', 1, readCCstatus },
   { 's', 7, sendCmdStr },
-  { 'p', 0, listPeers },
-//  { 'f', 2, writeEEprom },
+  { 'p', 0, showPeers },
+  { 'l', 2, showList },
 //  { 'c', 0, clearEEprom },
 //  { 't', 0, testConfig },
 
@@ -181,99 +183,161 @@ const InputParser::Commands cmdTab[] PROGMEM = {
 
 RadioSPI spi;
 
-void readCCstatus() {
-  uint8_t ret, info;
-  parser >> info;
-  ret = spi.readReg(info, CC1101_STATUS);
-  DPRINT(F("\nread status: 0x")); DHEX(info); DPRINT(F(": 0x")); DHEX(ret); DPRINT('\n');
+void readCCstatusall() {
+  DPRINT('\n');
+  for (uint8_t i = 0x30; i <= 0x3d ; i++) {
+    uint8_t state = spi.readReg(i, CC1101_STATUS);
+    displayCCstatus(i, state);    // display value
+  }
+  DPRINT('\n');
+}
 
-  switch (info) {
-  case 0x33:  // LQI
-    DPRINT(F("LQI: ")); DPRINT(ret & 0x7F);
-    if (ret & 0x80) DPRINT(F(", CRC_OK"));
+void readCCstatus() {
+  uint8_t reg;
+  parser >> reg;
+  uint8_t state = spi.readReg(reg, CC1101_STATUS);
+  DPRINT('\n');
+  displayCCstatus(reg, state);    // display value
+}
+
+void displayCCstatus(uint8_t reg, uint8_t state) {
+  DPRINT(F("CC: 0x")); DHEX(reg); DPRINT(F(":0x")); DHEX(state); DPRINT(F(", "));
+
+  switch (reg) {
+  case 0x30:  // PARTNUM
+    DPRINT(F("PARTNUM: ")); DPRINTLN(state);
+    break;
+  case 0x31:  // VERSION
+    DPRINT(F("VERSION: ")); DPRINTLN(state);
+    break;
+  case 0x32:  // FREQEST - Frequency Offset Estimate from Demodulator
+    DPRINT(F("FREQEST: ")); DPRINTLN(state);
+    break;
+  case 0x33:  // LQI - Demodulator Estimate for Link Quality
+    DPRINT(F("LQI: ")); DPRINT(state & 0x7F);
+    if (state & 0x80) DPRINT(F(", CRC_OK"));
     DPRINT('\n');
     break;
-  case 0x35:  // Marcstate
+  case 0x34:  // RSSI - Received Signal Strength Indication
+    DPRINT(F("RSSI: ")); DPRINTLN(state);
+    break;
+  case 0x35:  // Marcstate - Main Radio Control State Machine State
     DPRINT(F("MARCSTATE_"));
-    if      (ret == 0x00) DPRINT(F("SLEEP"));
-    else if (ret == 0x01) DPRINT(F("IDLE"));
-    else if (ret == 0x02) DPRINT(F("XOFF"));
-    else if (ret == 0x03) DPRINT(F("VCOON_MC"));
-    else if (ret == 0x04) DPRINT(F("REGON_MC"));
-    else if (ret == 0x05) DPRINT(F("MANCAL"));
-    else if (ret == 0x06) DPRINT(F("VCOON"));
-    else if (ret == 0x07) DPRINT(F("REGON"));
-    else if (ret == 0x08) DPRINT(F("STARTCAL"));
-    else if (ret == 0x09) DPRINT(F("BWBOOST"));
-    else if (ret == 0x0a) DPRINT(F("FS_LOCK"));
-    else if (ret == 0x0b) DPRINT(F("IFADCON"));
-    else if (ret == 0x0c) DPRINT(F("ENDCAL"));
-    else if (ret == 0x0d) DPRINT(F("RX"));
-    else if (ret == 0x0e) DPRINT(F("RX_END"));
-    else if (ret == 0x0f) DPRINT(F("RX_RST"));
-    else if (ret == 0x10) DPRINT(F("TXRX_SWITCH"));
-    else if (ret == 0x11) DPRINT(F("RXFIFO_OVERFLOW"));
-    else if (ret == 0x12) DPRINT(F("FSTXON"));
-    else if (ret == 0x13) DPRINT(F("TX"));
-    else if (ret == 0x14) DPRINT(F("TX_END"));
-    else if (ret == 0x15) DPRINT(F("RXTX_SWITCH"));
-    else if (ret == 0x16) DPRINT(F("TXFIFO_UNDERFLOW"));
+    if (state == 0x00) DPRINT(F("SLEEP"));
+    else if (state == 0x01) DPRINT(F("IDLE"));
+    else if (state == 0x02) DPRINT(F("XOFF"));
+    else if (state == 0x03) DPRINT(F("VCOON_MC"));
+    else if (state == 0x04) DPRINT(F("REGON_MC"));
+    else if (state == 0x05) DPRINT(F("MANCAL"));
+    else if (state == 0x06) DPRINT(F("VCOON"));
+    else if (state == 0x07) DPRINT(F("REGON"));
+    else if (state == 0x08) DPRINT(F("STARTCAL"));
+    else if (state == 0x09) DPRINT(F("BWBOOST"));
+    else if (state == 0x0a) DPRINT(F("FS_LOCK"));
+    else if (state == 0x0b) DPRINT(F("IFADCON"));
+    else if (state == 0x0c) DPRINT(F("ENDCAL"));
+    else if (state == 0x0d) DPRINT(F("RX"));
+    else if (state == 0x0e) DPRINT(F("RX_END"));
+    else if (state == 0x0f) DPRINT(F("RX_RST"));
+    else if (state == 0x10) DPRINT(F("TXRX_SWITCH"));
+    else if (state == 0x11) DPRINT(F("RXFIFO_OVERFLOW"));
+    else if (state == 0x12) DPRINT(F("FSTXON"));
+    else if (state == 0x13) DPRINT(F("TX"));
+    else if (state == 0x14) DPRINT(F("TX_END"));
+    else if (state == 0x15) DPRINT(F("RXTX_SWITCH"));
+    else if (state == 0x16) DPRINT(F("TXFIFO_UNDERFLOW"));
     DPRINT('\n');
+    break;
+  case 0x36:  // WORTIME1 - High Byte of WOR Time
+    DPRINT(F("WORTIME1: ")); DPRINTLN(state);
+    break;
+  case 0x37:  // WORTIME0 - Low Byte of WOR Time
+    DPRINT(F("WORTIME0: ")); DPRINTLN(state);
     break;
   case 0x38:  // PKTSTATUS
     DPRINT(F("PKTSTATUS"));
-    if (ret & 0x01) DPRINT(F(", GDO0"));
-    if (ret & 0x04) DPRINT(F(", GDO2"));
-    if (ret & 0x08) DPRINT(F(", SFD"));
-    if (ret & 0x10) DPRINT(F(", CCA"));
-    if (ret & 0x20) DPRINT(F(", PQT_REACHED"));
-    if (ret & 0x40) DPRINT(F(", CS"));
-    if (ret & 0x80) DPRINT(F(", CRC_OK"));
+    if (state & 0x01) DPRINT(F(", GDO0"));
+    if (state & 0x04) DPRINT(F(", GDO2"));
+    if (state & 0x08) DPRINT(F(", SFD"));
+    if (state & 0x10) DPRINT(F(", CCA"));
+    if (state & 0x20) DPRINT(F(", PQT_REACHED"));
+    if (state & 0x40) DPRINT(F(", CS"));
+    if (state & 0x80) DPRINT(F(", CRC_OK"));
     DPRINT('\n');
     break;
+  case 0x39:  // VCO_VC_DAC - Current Setting from PLL Calibration Module
+    DPRINT(F("VCO_VC_DAC: ")); DPRINTLN(state);
+    break;
   case 0x3a:  // TXBYTES
-    DPRINT(F("TXBYTES: ")); DPRINT(ret & 0x7F);
-    if (ret & 0x80) DPRINT(F(", TXFIFO_UNDERFLOW"));
+    DPRINT(F("TXBYTES: ")); DPRINT(state & 0x7F);
+    if (state & 0x80) DPRINT(F(", TXFIFO_UNDERFLOW"));
     DPRINT('\n');
     break;
   case 0x3b:  // RXBYTES
-    DPRINT(F("RXBYTES: ")); DPRINT(ret & 0x7F);
-    if (ret & 0x80) DPRINT(F(", RXFIFO_OVERFLOW"));
+    DPRINT(F("RXBYTES: ")); DPRINT(state & 0x7F);
+    if (state & 0x80) DPRINT(F(", RXFIFO_OVERFLOW"));
     DPRINT('\n');
+    break;
+  case 0x3c:  // RCCTRL1_STATUS - Last RC Oscillator Calibration Result
+    DPRINT(F("RCCTRL1_STATUS: ")); DPRINTLN(state);
+    break;
+  case 0x3d:  // RCCTRL0_STATUS - Last RC Oscillator Calibration Result
+    DPRINT(F("RCCTRL0_STATUS: ")); DPRINTLN(state);
     break;
   default:
     break;
   }
-  DPRINT('\n');
 }
 
 void sendCmdStr() {																
   Message msg;
+  uint8_t* buffer;
+  parser >> buffer;
 
-  msg.init(0x0b, parser.buffer[1], parser.buffer[3], parser.buffer[2], parser.buffer[10], parser.buffer[11]);
-  msg.from(&parser.buffer[4]);
-  msg.to(&parser.buffer[7]);
+  msg.init(0x0b, buffer[1], buffer[3], buffer[2], buffer[10], buffer[11]);
+  msg.from(&buffer[4]);
+  msg.to(&buffer[7]);
 
-  uint8_t dlen = parser.buffer[0] - 0x0b;
-  if (dlen) msg.append(&parser.buffer[12], dlen);
+  uint8_t dlen = buffer[0] - 0x0b;
+  if (dlen) msg.append(&buffer[12], dlen);
   //msg.dump();
   sdev.send(msg);
 }
 
-void listPeers() {
+void showPeers() {
   uint8_t cnlcnt = sdev.channels();
   DPRINTLN(F("\nlist peers"));
   for (uint8_t i = 1; i <= cnlcnt; i++) {
     uint8_t pcnt = sdev.channel(i).peers();
-    DPRINT(F("CNL: ")); DPRINT(i); DPRINT(F(", PEERS: ")); DPRINTLN(pcnt);
+    DPRINT(F("Channel: ")); DPRINT(i); DPRINT(F(", ")); DPRINT(pcnt); DPRINTLN(F(" peers"));
     
-    for (uint8_t j = 0; j < pcnt; j++) {
-      DHEX(j); DPRINT(' '); DHEXLN(sdev.channel(i).peerat(j));
+    uint8_t j = 0;
+    while (j < pcnt) {
+      Peer peer = sdev.channel(i).peerat(j);
+      DHEX(j); DPRINT(':'); DHEX(peer.id0()); DHEX(peer.id1()); DHEX(peer.id2()); DHEX(peer.channel()); DPRINT(' ');
+      j++;
+      if (!(j % 5) && (j > 1) ) DPRINT('\n');
     }
+    if (j % 5) DPRINT('\n');
   }
   DPRINT('\n');
 }
 
+void showList() {
+  // input: cnl lst - if it is list3 we show all peers with their respictive list1
+  uint8_t cnl, lst;
+  parser >> cnl >> lst;
+
+  uint8_t maxcnl = sdev.channels();
+  if (cnl > maxcnl) {
+    DPRINT(F("device has only ")); DPRINT(maxcnl); DPRINTLN(F(" channels"));
+    return;
+  }
+
+  if (sdev.channel(cnl).has)
+
+  DPRINT(cnl); DPRINT(' '); DPRINTLN(lst);
+}
 
 void serialEventRun(void) {
   parser.poll();
