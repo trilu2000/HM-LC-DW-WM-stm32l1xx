@@ -154,7 +154,7 @@ public:
   uint8_t count() { return fill; }            // number of data bytes
 
   InputParser& operator >> (uint8_t*& v) {
-    v = buffer;
+    v = buffer+next;
     return *this;
   }
 

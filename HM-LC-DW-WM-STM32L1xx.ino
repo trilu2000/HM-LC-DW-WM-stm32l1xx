@@ -139,49 +139,26 @@ void loop() {
 
 
 #ifdef EXTRA_DEBUG
-/* Use serial input function to debug CC1101 status at runtime
-*  Input format: $<info> 's' or 'r' followed by a return
-*  There are two types available, s = CC1101_STATUS, c = CC1101_CONFIG
-* 
-*  CC1101_STATUS:
-*  CC1101_PARTNUM          0x30               (0x00)  Chip ID
-*  CC1101_VERSION          0x31               (0x04)  Chip ID
-*  CC1101_FREQEST          0x32               (0x00)  Frequency Offset Estimate from Demodulator
-*  CC1101_LQI              0x33               (0x00)  Demodulator Estimate for Link Quality
-*  CC1101_RSSI             0x34               (0x00)  Received Signal Strength Indication
-*  CC1101_MARCSTATE        0x35               (0x00)  Main Radio Control State Machine State
-*  CC1101_WORTIME1         0x36               (0x00)  High Byte of WOR Time
-*  CC1101_WORTIME0         0x37               (0x00)  Low Byte of WOR Time
-*  CC1101_PKTSTATUS        0x38               (0x00)  Current GDOx Status and Packet Status
-*  CC1101_VCO_VC_DAC       0x39               (0x00)  Current Setting from PLL Calibration Module
-*  CC1101_TXBYTES          0x3A               (0x00)  Underflow and Number of Bytes
-*  CC1101_RXBYTES          0x3B               (0x00)  Overflow and Number of Bytes
-*  CC1101_RCCTRL1_STATUS   0x3C               (0x00)  Last RC Oscillator Calibration Result
-*  CC1101_RCCTRL0_STATUS   0x3D               (0x00)  Last RC Oscillator Calibration Result
-*
-*/
 
 #include "inputparser.h"
 InputParser parser(50, (InputParser::Commands*)cmdTab);
 
 const InputParser::Commands cmdTab[] PROGMEM = {
-//  { 'h', 0, showHelp },
+  { 'h', 0, showHelp },
   { 'a', 0, readCCstatusall },
   { 'r', 1, readCCstatus },
+  { 'f', 0, readFSCAL1 },
   { 's', 7, sendCmdStr },
   { 'p', 0, showPeers },
-  { 'l', 2, showList },
-//  { 'c', 0, clearEEprom },
-//  { 't', 0, testConfig },
-
-//  { 'b', 1, buttonSend },
-//  { 'a', 0, stayAwake },
-
-//  { 'r', 0, resetDevice },
+  { 'l', 3, showList },
   { 0 }
 };
 
 RadioSPI spi;
+
+void showHelp() {
+  // nothing here yet
+}
 
 void readCCstatusall() {
   DPRINT('\n');
@@ -289,6 +266,11 @@ void displayCCstatus(uint8_t reg, uint8_t state) {
   }
 }
 
+void readFSCAL1() {
+  uint8_t state = spi.readReg(CC1101_FSCAL1, CC1101_CONFIG);
+  DPRINT(F("\nFSCAL1: 0x")); DHEXLN(state);
+}
+
 void sendCmdStr() {																
   Message msg;
   uint8_t* buffer;
@@ -324,19 +306,43 @@ void showPeers() {
 }
 
 void showList() {
-  // input: cnl lst - if it is list3 we show all peers with their respictive list1
-  uint8_t cnl, lst;
-  parser >> cnl >> lst;
+  uint8_t cnl, lst, idx;
+  GenericList list;
+  parser >> cnl >> lst >> idx;
 
-  uint8_t maxcnl = sdev.channels();
-  if (cnl > maxcnl) {
-    DPRINT(F("device has only ")); DPRINT(maxcnl); DPRINTLN(F(" channels"));
+  DPRINT(F("\nList")); DPRINT(lst); DPRINT(F(" for Channel: ")); DPRINT(cnl);  DPRINT(F(", Peerslot: ")); DPRINTLN(idx);
+
+  // check  channel
+  if (sdev.hasChannel(cnl) == false) {
+    DPRINT(F("channel out of range")); 
+    return;
+  }       
+  
+  // get respective list
+  ChannelType& c = sdev.channel(cnl);
+  if (lst == 0) {
+    list = sdev.getList0();
+  }
+  else if (lst == 1) {
+    list = c.getList1();
+  }
+  else if (c.hasList2() && lst == 2) {
+    list = c.getList2();
+  }
+  else if (c.hasList3() && lst == 3) {
+    list = c.getList3(idx);
+  }
+  else if (c.hasList4() && lst == 4) {
+    list = c.getList4(idx);
+  }
+
+  if (list.address() == 0) {
+    DPRINT(F("list not available"));
     return;
   }
 
-  if (sdev.channel(cnl).has)
-
-  DPRINT(cnl); DPRINT(' '); DPRINTLN(lst);
+  list.dump();
+  DPRINT('\n');
 }
 
 void serialEventRun(void) {
