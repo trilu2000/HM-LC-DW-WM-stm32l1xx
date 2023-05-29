@@ -13,11 +13,10 @@
 
 //#define HIDE_IGNORE_MSG
 //#define DIMMER_EXTRA_DEBUG
-#define RADIOWATCHDOG
 #define EXTRA_DEBUG
 //#define NDEBUG
 #undef NDEBUG
-#define USE_CCA
+//#define USE_CCA
 
 // as we have no defined HW in STM32duino yet, we are working on base of the default STM32L152CB board
 // which has a different pin map. deviances are handled for the moment in a local header file. 
@@ -58,7 +57,8 @@ const struct DeviceInfo PROGMEM devinfo = {
 
 // Configure the used hardware
 typedef LibSPI<CC1101_CS_PIN> RadioSPI;
-typedef Radio<RadioSPI, CC1101_GDO0_PIN> RadioType;
+//typedef Radio<RadioSPI, CC1101_GDO0_PIN> RadioType;
+typedef CalibratedRadio<RadioSPI, CC1101_GDO0_PIN> RadioType;
 typedef DualStatusLed<LED1_PIN, LED2_PIN> LedType;
 typedef AskSin<LedType, NoBattery, RadioType> HalType;
 typedef DimmerChannel<HalType,PEERS_PER_CHANNEL> ChannelType;
